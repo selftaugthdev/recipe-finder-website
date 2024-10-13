@@ -3,90 +3,124 @@
 import { useState } from 'react';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { Loader2 } from 'lucide-react';
 
-type Recipe = {
-  label: string;
-  image: string;
-  url: string;
+type AnalyzedRecipe = {
+  uri: string;
+  calories: number;
+  totalWeight: number;
   dietLabels: string[];
   healthLabels: string[];
+  cautions: string[];
+  totalNutrients: Record<string, { label: string; quantity: number; unit: string }>;
 };
 
 export default function RecipeFinder() {
-  const [query, setQuery] = useState('');
-  const [diet, setDiet] = useState('');
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [title, setTitle] = useState('');
+  const [ingredients, setIngredients] = useState('');
+  const [analyzedRecipe, setAnalyzedRecipe] = useState<AnalyzedRecipe | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const searchRecipes = async () => {
+  const analyzeRecipe = async () => {
     setLoading(true);
+    setError(null);
     const APP_ID = process.env.NEXT_PUBLIC_EDAMAM_APP_ID;
     const APP_KEY = process.env.NEXT_PUBLIC_EDAMAM_APP_KEY;
-    const url = `https://api.edamam.com/search?q=${query}&app_id=${APP_ID}&app_key=${APP_KEY}&diet=${diet}`;
+    
+    const url = `https://api.edamam.com/api/nutrition-details?app_id=${APP_ID}&app_key=${APP_KEY}`;
+    
+    const ingredientList = ingredients.split('\n').filter(ingr => ingr.trim() !== '');
+
+    const recipeData = {
+      title: title,
+      ingr: ingredientList
+    };
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(recipeData)
+      });
+
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      setRecipes(data.hits.map((hit: any) => hit.recipe));
+      console.log('API Response:', data);
+      
+      setAnalyzedRecipe(data);
     } catch (error) {
-      console.error('Error fetching recipes:', error);
+      console.error('Error analyzing recipe:', error);
+      if (error instanceof Error) {
+        if (error.message.includes('555')) {
+          setError('Recipe with insufficient quality to process correctly.');
+        } else {
+          setError(`Failed to analyze recipe: ${error.message}`);
+        }
+      } else {
+        setError('An unknown error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <div className="flex flex-col md:flex-row gap-4 mb-8">
+    <div className="max-w-2xl mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Recipe Nutrition Analyzer</h1>
+      <div className="space-y-4 mb-8">
         <Input
           type="text"
-          placeholder="Enter ingredients or dish name"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="flex-grow"
+          placeholder="Enter recipe title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
         />
-        <Select value={diet} onValueChange={setDiet}>
-          <SelectTrigger className="w-full md:w-[180px]">
-            <SelectValue placeholder="Select diet" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="balanced">Balanced</SelectItem>
-            <SelectItem value="high-protein">High Protein</SelectItem>
-            <SelectItem value="low-fat">Low Fat</SelectItem>
-            <SelectItem value="low-carb">Low Carb</SelectItem>
-            <SelectItem value="vegan">Vegan</SelectItem>
-            <SelectItem value="vegetarian">Vegetarian</SelectItem>
-            <SelectItem value="keto">Keto</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button onClick={searchRecipes} disabled={loading}>
+        <textarea
+          className="w-full h-32 p-2 border rounded"
+          placeholder="Enter ingredients (one per line)"
+          value={ingredients}
+          onChange={(e) => setIngredients(e.target.value)}
+        />
+        <Button onClick={analyzeRecipe} disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Search Recipes
+          Analyze Recipe
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {recipes.map((recipe, index) => (
-          <Card key={index}>
-            <CardHeader>
-              <CardTitle>{recipe.label}</CardTitle>
-              <CardDescription>{recipe.dietLabels.join(', ')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <img src={recipe.image} alt={recipe.label} className="w-full h-48 object-cover rounded-md" />
-              <p className="mt-2">{recipe.healthLabels.join(', ')}</p>
-            </CardContent>
-            <CardFooter>
-              <Button asChild>
-                <a href={recipe.url} target="_blank" rel="noopener noreferrer">View Recipe</a>
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
+      {error && <div className="text-red-500 mb-4">{error}</div>}
+
+      {analyzedRecipe && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>
+              Calories: {analyzedRecipe.calories.toFixed(0)} | 
+              Weight: {analyzedRecipe.totalWeight.toFixed(0)}g
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p><strong>Diet Labels:</strong> {analyzedRecipe.dietLabels.join(', ')}</p>
+            <p><strong>Health Labels:</strong> {analyzedRecipe.healthLabels.join(', ')}</p>
+            <p><strong>Cautions:</strong> {analyzedRecipe.cautions.join(', ')}</p>
+            <h3 className="font-bold mt-4 mb-2">Nutrients:</h3>
+            <ul>
+              {Object.entries(analyzedRecipe.totalNutrients).slice(0, 5).map(([key, nutrient]) => (
+                <li key={key}>
+                  {nutrient.label}: {nutrient.quantity.toFixed(2)} {nutrient.unit}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

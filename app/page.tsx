@@ -1,4 +1,4 @@
-import RecipeFinder from '../components/RecipeFinder';
+/* import RecipeFinder from '../components/RecipeFinder';
 
 export default function Home() {
   return (
@@ -6,4 +6,4 @@ export default function Home() {
       <RecipeFinder />
     </div>
   );
-}
+} */
